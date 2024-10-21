@@ -1,0 +1,188 @@
+-- Services References
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ScreenGui = Instance.new("ScreenGui")
+local TextButton = Instance.new("TextButton")
+
+-- Variables to manage camera targeting
+local isCameraLocked = false
+local currentTarget = nil
+
+-- Create and configure the GUI
+ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+TextButton.Parent = ScreenGui
+TextButton.Size = UDim2.new(0, 200, 0, 50) -- Button size
+TextButton.Position = UDim2.new(0.5, -100, 0.9, -25) -- Centered at the bottom of the screen
+TextButton.Text = "TESTING LOCK" -- Reset button text
+TextButton.TextColor3 = Color3.new(1, 1, 1) -- White text
+TextButton.BackgroundColor3 = Color3.new(0, 0, 0) -- Black background
+TextButton.TextScaled = true -- Scale text to fit button
+
+-- Make the GUI draggable
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+TextButton.MouseButton1Down:Connect(function(input)
+    dragging = true
+    dragStart = input.Position
+    startPos = TextButton.Position
+
+    input.Changed:Connect(function()
+        if input.UserInputState == Enum.UserInputState.End then
+            dragging = false
+        end
+    end)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        TextButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Function to create a name tag for a player's character
+local function createNameTag(character, player)
+    local head = character:WaitForChild("Head")
+
+    -- Create a BillboardGui
+    local nameTag = Instance.new("BillboardGui")
+    nameTag.Parent = head
+    nameTag.Adornee = head
+    nameTag.Size = UDim2.new(0, 100, 0, 50) -- Adjust size as needed
+    nameTag.StudsOffset = Vector3.new(0, 2, 0) -- Position above the head
+    nameTag.AlwaysOnTop = true -- Ensure the name tag is always visible above other objects
+
+    -- Create a TextLabel to display the player's name
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Parent = nameTag
+    nameLabel.Size = UDim2.new(1, 0, 1, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = Color3.new(1, 1, 1) -- White text
+    nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0) -- Black stroke for better visibility
+    nameLabel.TextStrokeTransparency = 0.5 -- Stroke transparency
+    nameLabel.Text = player.Name -- Set the player's name
+end
+
+-- Function to highlight a player's character
+local function highlightCharacter(character)
+    -- Create a Highlight instance
+    local highlight = Instance.new("Highlight")
+    highlight.Parent = character
+    highlight.Adornee = character
+    highlight.FillColor = Color3.new(1, 1, 0) -- Yellow color for highlight
+    highlight.OutlineColor = Color3.new(1, 0, 0) -- Red outline
+end
+
+-- Function to highlight all players in the server
+local function highlightAllPlayers()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            highlightCharacter(player.Character)
+            createNameTag(player.Character, player)
+        end
+    end
+end
+
+-- Function to find the nearest player
+local function findNearestPlayer()
+    local localPlayer = Players.LocalPlayer
+    local nearestPlayer = nil
+    local nearestDistance = math.huge -- Set to a very large number
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local distance = (player.Character.HumanoidRootPart.Position - localPlayer.Character.HumanoidRootPart.Position).magnitude
+            if distance < nearestDistance then
+                nearestDistance = distance
+                nearestPlayer = player
+            end
+        end
+    end
+
+    return nearestPlayer
+end
+
+-- Function to find the second nearest player
+local function findSecondNearestPlayer(excludePlayer)
+    local localPlayer = Players.LocalPlayer
+    local secondNearestPlayer = nil
+    local nearestDistance = math.huge -- Set to a very large number
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer and player ~= excludePlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local distance = (player.Character.HumanoidRootPart.Position - localPlayer.Character.HumanoidRootPart.Position).magnitude
+            if distance < nearestDistance then
+                nearestDistance = distance
+                secondNearestPlayer = player
+            end
+        end
+    end
+
+    return secondNearestPlayer
+end
+
+-- Function to toggle camera lock to the nearest player's head
+local function toggleCameraLock()
+    local nearestPlayer = findNearestPlayer()
+    if nearestPlayer and nearestPlayer.Character and nearestPlayer.Character:FindFirstChild("Head") then
+        currentTarget = nearestPlayer.Character.Head
+        isCameraLocked = not isCameraLocked -- Toggle camera lock
+
+        -- Connect the player died event to switch target
+        nearestPlayer.Character:WaitForChild("Humanoid").Died:Connect(function()
+            local secondNearestPlayer = findSecondNearestPlayer(nearestPlayer)
+            if secondNearestPlayer and secondNearestPlayer.Character and secondNearestPlayer.Character:FindFirstChild("Head") then
+                currentTarget = secondNearestPlayer.Character.Head
+            end
+        end)
+    else
+        isCameraLocked = false -- If no nearest player, unlock
+        currentTarget = nil
+    end
+end
+
+-- Connect the button to toggle the camera lock when clicked
+TextButton.MouseButton1Click:Connect(function()
+    toggleCameraLock()
+end)
+
+-- Connect player added event
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        highlightCharacter(character)
+        createNameTag(character, player)
+    end)
+end)
+
+-- Connect existing players and highlight their characters when the game starts
+for _, player in ipairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function(character)
+        highlightCharacter(character)
+        createNameTag(character, player)
+    end)
+
+    if player.Character then
+        highlightCharacter(player.Character)
+        createNameTag(player.Character, player)
+    end
+end
+
+-- Ensure GUI is always visible even if the player dies
+Players.LocalPlayer.CharacterAdded:Connect(function()
+    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") -- Re-parent GUI
+end)
+
+-- Update loop for camera turning
+RunService.RenderStepped:Connect(function()
+    if isCameraLocked and currentTarget then
+        local camera = workspace.CurrentCamera
+        local targetPosition = currentTarget.Position + Vector3.new(0, 0.15, 0) -- Aim a bit lower by adjusting Y value
+
+        -- Calculate the new CFrame to turn towards the target
+        camera.CFrame = CFrame.new(camera.CFrame.Position, targetPosition)
+    end
+end)
